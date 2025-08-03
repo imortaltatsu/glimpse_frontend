@@ -1,6 +1,71 @@
+"use client"
+
 import { useState, useEffect } from "react"
-import { Search, ArrowRight, Clock, Volume2, ImageIcon, Video, FileText } from "lucide-react"
+import {
+  Search,
+  ArrowRight,
+  Clock,
+  Volume2,
+  ImageIcon,
+  Video,
+  FileText,
+  ExternalLink,
+  Eye,
+  ChevronLeft,
+  ChevronRight,
+  
+} from "lucide-react"
 import { RetroVideo } from "./ar-retro-video"
+import { RetroCard } from "./ar-retro-card"
+import { RetroPopup } from "./ar-retro-popup"
+
+interface SearchResult {
+  score: number
+  original_score: number
+  content_quality: string
+  content_type: string
+  word_count: number
+  section: string
+  language: string
+  chunk_index: number
+  normalized_url: string
+  has_description: boolean
+  arns_status: string
+  txid: string
+  text_length: number
+  web_loader_description: string
+  processing_timestamp: string
+  weight: number
+  chunk: string
+  web_loader_content: string
+  original_modality: string
+  tag: string
+  web_loader_title: string
+  author: string
+  description: string
+  is_non_assigned_arns: boolean
+  title: string
+  has_title: boolean
+  url: string
+  is_arns: boolean
+  modality: string
+  keywords: string
+  duplicates: any[]
+  has_duplicates: boolean
+}
+
+interface SearchResponse {
+  results: SearchResult[]
+}
+
+interface StatusResponse {
+  web: number
+  image: number
+  audio: number
+  video: number
+  all: number
+  arns: number
+}
 
 interface RetroHeaderProps {
   // Branding
@@ -9,7 +74,6 @@ interface RetroHeaderProps {
   highlightedWord?: string
   bottomText?: string
   // Navigation
-  navToggleOptions?: string[]
   statusText?: string
   // Search
   searchPlaceholder?: string
@@ -29,7 +93,7 @@ interface RetroHeaderProps {
   textColor?: string
   // Callbacks
   onSearch?: (query: string, filter: string) => void
-  onNavToggle?: (option: string) => void
+  // onNavToggle?: (option: string) => void
   onStatusClick?: () => void
   className?: string
 }
@@ -39,7 +103,7 @@ export function RetroHeader({
   subtitle = "SEARCH ALMOST",
   highlightedWord = "ANYTHING",
   bottomText = "WITH VECTOR SEARCHING ACCURACY",
-  navToggleOptions = ["WEB", "ARNS"],
+  // navToggleOptions = ["WEB", "ARNS"],
   statusText = "STATUS",
   searchPlaceholder = "Search anything ///",
   searchFilters = ["Text", "Image", "Video", "Audio"],
@@ -50,52 +114,125 @@ export function RetroHeader({
   character2Image = "https://zh5mns2xs4orzalnne62iz47xz7ag54ujodwlfmdbrzk5xymqkeq.arweave.net/yfrGy1eXHRyBbWk9pGefvn4Dd5RLh2WVgwxyrt8Mgok",
   primaryColor = "#2d2d2d",
   secondaryColor = "#f5f5dc",
-  accentColor = "#4ade80",
+ 
   backgroundColor = "#f5f5dc",
   textColor = "#2d2d2d",
   onSearch,
-  onNavToggle,
-  onStatusClick,
+  // onNavToggle,
   className = "",
 }: RetroHeaderProps) {
   const [searchQuery, setSearchQuery] = useState("")
   const [activeFilter, setActiveFilter] = useState(searchFilters[0])
-  const [activeNavOption, setActiveNavOption] = useState(navToggleOptions[0])
+  // const [activeNavOption, setActiveNavOption] = useState(navToggleOptions[0])
   const [showFirstBubble, setShowFirstBubble] = useState(false)
   const [showSecondBubble, setShowSecondBubble] = useState(false)
   const [videoVisible, setVideoVisible] = useState(false)
 
+  // Search states
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [hasSearched, setHasSearched] = useState(false)
+  const [selectedResult, setSelectedResult] = useState<SearchResult | null>(null)
+  const [isPopupOpen, setIsPopupOpen] = useState(false)
+
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1)
+  const resultsPerPage = 10
+  const totalPages = Math.ceil(searchResults.length / resultsPerPage)
+  const startIndex = (currentPage - 1) * resultsPerPage
+  const endIndex = startIndex + resultsPerPage
+  const currentResults = searchResults.slice(startIndex, endIndex)
+
+  // Status states
+  const [statusData, setStatusData] = useState<StatusResponse | null>(null)
+  const [isStatusPopupOpen, setIsStatusPopupOpen] = useState(false)
+  const [isStatusLoading, setIsStatusLoading] = useState(false)
+
   // Animation sequence on component mount
   useEffect(() => {
-    // First chat bubble appears after 1 second
-    const firstBubbleTimer = setTimeout(() => {
-      setShowFirstBubble(true)
-    }, 500)
+    if (!hasSearched) {
+      const firstBubbleTimer = setTimeout(() => {
+        setShowFirstBubble(true)
+      }, 500)
 
-    // Second chat bubble appears after 3 seconds
-    const secondBubbleTimer = setTimeout(() => {
-      setShowSecondBubble(true)
-    }, 1000)
+      const secondBubbleTimer = setTimeout(() => {
+        setShowSecondBubble(true)
+      }, 1000)
 
-    // Video slides up after 1.5 seconds
-    const videoTimer = setTimeout(() => {
-      setVideoVisible(true)
-    }, 1000)
+      const videoTimer = setTimeout(() => {
+        setVideoVisible(true)
+      }, 1000)
 
-    return () => {
-      clearTimeout(firstBubbleTimer)
-      clearTimeout(secondBubbleTimer)
-      clearTimeout(videoTimer)
+      return () => {
+        clearTimeout(firstBubbleTimer)
+        clearTimeout(secondBubbleTimer)
+        clearTimeout(videoTimer)
+      }
     }
-  }, [])
+  }, [hasSearched])
 
-  const handleSearch = () => {
-    onSearch?.(searchQuery, activeFilter)
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return
+
+    setIsLoading(true)
+    setHasSearched(true)
+    setCurrentPage(1)
+
+    try {
+      // Determine endpoint based on active filter
+      let endpoint = "searchweb" // default for Text
+      if (activeFilter === "Image") endpoint = "searchimage"
+      else if (activeFilter === "Video") endpoint = "searchvideo"
+      else if (activeFilter === "Audio") endpoint = "searchaudio"
+
+      const response = await fetch(
+        `https://arfetch.adityaberry.me/${endpoint}?query=${encodeURIComponent(searchQuery)}&top_k=100`,
+      )
+      const data: SearchResponse = await response.json()
+      setSearchResults(data.results || [])
+      onSearch?.(searchQuery, activeFilter)
+    } catch (error) {
+      console.error("Search failed:", error)
+      setSearchResults([])
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  const handleNavToggle = (option: string) => {
-    setActiveNavOption(option)
-    onNavToggle?.(option)
+  const handleStatusClick = async () => {
+    setIsStatusLoading(true)
+    setIsStatusPopupOpen(true)
+
+    try {
+      const response = await fetch("https://arfetch.adityaberry.me/status")
+      const data: StatusResponse = await response.json()
+      setStatusData(data)
+    } catch (error) {
+      console.error("Status fetch failed:", error)
+      setStatusData(null)
+    } finally {
+      setIsStatusLoading(false)
+    }
+  }
+
+  // const handleNavToggle = (option: string) => {
+  //   setActiveNavOption(option)
+  //   onNavToggle?.(option)
+  // }
+
+  const handleResultClick = (result: SearchResult) => {
+    setSelectedResult(result)
+    setIsPopupOpen(true)
+  }
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page)
+    window.scrollTo({ top: 0, behavior: "smooth" })
+  }
+
+  const truncateText = (text: string, maxLength: number) => {
+    if (text.length <= maxLength) return text
+    return text.substring(0, maxLength) + "..."
   }
 
   const filterIcons = {
@@ -131,17 +268,14 @@ export function RetroHeader({
   }
 
   const videoSlideUp = {
-    transform: videoVisible ? "translateY(0)" : "translateY(100%)",
+    transform: videoVisible && !hasSearched ? "translateY(0)" : "translateY(100%)",
     transition: "transform 1s ease-out",
   }
 
   return (
-    <header
-      className={`relative min-h-screen overflow-hidden ${className}`}
-      style={{ backgroundColor, color: textColor }}
-    >
+    <div className={`relative min-h-screen overflow-hidden ${className}`} style={{ backgroundColor, color: textColor }}>
       {/* CSS Animations */}
-      <style jsx>{`
+      <style>{`
         @keyframes float1 {
           0%, 100% { transform: translateY(0px) rotate(12deg); }
           50% { transform: translateY(-20px) rotate(12deg); }
@@ -172,6 +306,14 @@ export function RetroHeader({
             opacity: 1;
           }
         }
+
+        .search-hover-effect {
+          transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .search-hover-effect:hover {
+          transform: translate(6px, 6px);
+          box-shadow: none;
+        }
       `}</style>
 
       {/* SVG Tunnel Grid Background */}
@@ -198,12 +340,15 @@ export function RetroHeader({
       <nav className="relative z-30 flex items-center justify-between p-6 lg:px-12">
         {/* Logo */}
         <div className="flex items-center">
+          <a href="/">
           <h1 className="text-2xl lg:text-3xl font-mono font-bold" style={{ color: textColor }}>
             {title}
           </h1>
+          </a>
         </div>
+
         {/* Center Toggle */}
-        <div className="hidden md:flex">
+        {/* <div className="hidden md:flex">
           <div
             className="inline-flex border-2 rounded-lg overflow-hidden"
             style={{
@@ -226,10 +371,11 @@ export function RetroHeader({
               </button>
             ))}
           </div>
-        </div>
+        </div> */}
+
         {/* Status Button */}
         <button
-          onClick={onStatusClick}
+          onClick={handleStatusClick}
           className="flex items-center gap-2 px-4 py-2 font-mono font-bold rounded-lg border-2 transition-all duration-200 hover:scale-105"
           style={{
             backgroundColor: primaryColor,
@@ -243,129 +389,135 @@ export function RetroHeader({
         </button>
       </nav>
 
-      {/* Decorative Elements  */}
-      <div className="absolute inset-0 z-5 pointer-events-none">
-        {/* Speech bubble - Top left */}
-        <div className="absolute top-32 left-[5%] hidden xl:block">
-          {/* First chat bubble with slide-in animation */}
-          {showFirstBubble && (
-            <div
-              className="relative px-4 py-2 rounded-lg border-2 font-mono text-sm font-bold opacity-0"
-              style={{
-                backgroundColor: "#fbbf24",
-                borderColor: primaryColor,
-                boxShadow: `3px 3px 0px ${primaryColor}`,
-                color: primaryColor,
-                ...chatBubbleSlideIn,
-              }}
-            >
-              {speechBubbleText}
+      {/* Decorative Elements */}
+      {!hasSearched && (
+        <div className="absolute inset-0 z-5 pointer-events-none">
+          {/* Speech bubble - Top left */}
+          <div className="absolute top-32 left-[5%] hidden xl:block">
+            {/* First chat bubble with slide-in animation */}
+            {showFirstBubble && (
               <div
-                className="absolute -bottom-2 left-4 w-4 h-4 rotate-45 border-r-2 border-b-2"
+                className="relative px-4 py-2 rounded-lg border-2 font-mono text-sm font-bold opacity-0"
                 style={{
                   backgroundColor: "#fbbf24",
                   borderColor: primaryColor,
-                }}
-              ></div>
-            </div>
-          )}
-          {/* Second info bubble with slide-in animation */}
-          {showSecondBubble && (
-            <div
-              className="mt-8 p-4 rounded-lg border-2 font-mono text-sm max-w-xs opacity-0"
-              style={{
-                backgroundColor: "#67e8f9",
-                borderColor: primaryColor,
-                boxShadow: `4px 4px 0px ${primaryColor}`,
-                color: primaryColor,
-                ...infoBubbleSlideIn,
-                animationDelay: "0s",
-              }}
-            >
-              {infoBoxText}
-            </div>
-          )}
-        </div>
-        {/* Character Illustrations - Top right with floating animation */}
-        {showCharacters && (
-          <>
-            <div className="absolute  xl:top-[10%] right-[5%] hidden xl:block">
-              <img
-                className="w-60 rounded-lg border-2 flex items-center justify-center"
-                style={{
-                  borderColor: primaryColor,
-                  boxShadow: `4px 4px 0px ${primaryColor}`,
-                  ...floatingAnimation1,
-                }}
-                src={character1Image || "/placeholder.svg"}
-                alt="Character illustration"
-              />
-              {/* Audio waveform visualization with floating animation */}
-              <div
-                className="mt-4 p-3 rounded-lg border-2 bg-green-400"
-                style={{
-                  borderColor: primaryColor,
                   boxShadow: `3px 3px 0px ${primaryColor}`,
-                  ...floatingAnimation3,
+                  color: primaryColor,
+                  ...chatBubbleSlideIn,
                 }}
               >
-                <div className="flex items-end gap-1 h-8">
-                  {Array.from({ length: 30 }).map((_, i) => (
-                    <div
-                      key={i}
-                      className="bg-green-800 rounded-sm"
-                      style={{
-                        width: "3px",
-                        height: `${Math.random() * 100}%`,
-                        minHeight: "20%",
-                        ...waveAnimation,
-                        animationDelay: `${i * 0.1}s`,
-                      }}
-                    />
-                  ))}
-                </div>
+                {speechBubbleText}
+                <div
+                  className="absolute -bottom-2 left-4 w-4 h-4 rotate-45 border-r-2 border-b-2"
+                  style={{
+                    backgroundColor: "#fbbf24",
+                    borderColor: primaryColor,
+                  }}
+                ></div>
               </div>
-            </div>
-            {/* Bottom left character with floating animation */}
-            <div className="absolute top-[32%] left-[10%] hidden lg:block">
-              <img
-                className="w-60 rounded-lg border-2 flex items-center justify-center"
+            )}
+            {/* Second info bubble with slide-in animation */}
+            {showSecondBubble && (
+              <div
+                className="mt-8 p-4 rounded-lg border-2 font-mono text-sm max-w-xs opacity-0"
                 style={{
+                  backgroundColor: "#67e8f9",
                   borderColor: primaryColor,
                   boxShadow: `4px 4px 0px ${primaryColor}`,
-                  ...floatingAnimation2,
+                  color: primaryColor,
+                  ...infoBubbleSlideIn,
+                  animationDelay: "0s",
                 }}
-                src={character2Image || "/placeholder.svg"}
-                alt="Bottom character illustration"
-              />
-            </div>
-          </>
-        )}
-      </div>
+              >
+                {infoBoxText}
+              </div>
+            )}
+          </div>
+
+          {/* Character Illustrations - Top right with floating animation */}
+          {showCharacters && (
+            <>
+              <div className="absolute xl:top-[10%] right-[5%] hidden xl:block">
+                <img
+                  className="w-60 rounded-lg border-2 flex items-center justify-center"
+                  style={{
+                    borderColor: primaryColor,
+                    boxShadow: `4px 4px 0px ${primaryColor}`,
+                    ...floatingAnimation1,
+                  }}
+                  src={character1Image || "/placeholder.svg"}
+                  alt="Character illustration"
+                />
+                {/* Audio waveform visualization with floating animation */}
+                <div
+                  className="mt-4 p-3 rounded-lg border-2 bg-green-400"
+                  style={{
+                    borderColor: primaryColor,
+                    boxShadow: `3px 3px 0px ${primaryColor}`,
+                    ...floatingAnimation3,
+                  }}
+                >
+                  <div className="flex items-end gap-1 h-8">
+                    {Array.from({ length: 30 }).map((_, i) => (
+                      <div
+                        key={i}
+                        className="bg-green-800 rounded-sm"
+                        style={{
+                          width: "3px",
+                          height: `${Math.random() * 100}%`,
+                          minHeight: "20%",
+                          ...waveAnimation,
+                          animationDelay: `${i * 0.1}s`,
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+              {/* Bottom left character with floating animation */}
+              <div className="absolute top-[32%] left-[10%] hidden lg:block">
+                <img
+                  className="w-60 rounded-lg border-2 flex items-center justify-center"
+                  style={{
+                    borderColor: primaryColor,
+                    boxShadow: `4px 4px 0px ${primaryColor}`,
+                    ...floatingAnimation2,
+                  }}
+                  src={character2Image || "/placeholder.svg"}
+                  alt="Bottom character illustration"
+                />
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="relative z-20 px-6 lg:px-12 py-12 lg:py-20">
         <div className="max-w-6xl mx-auto">
           {/* Main Headline */}
-          <div className="text-center mb-12 lg:mb-16">
-            <h2 className="text-3xl sm:text-4xl lg:text-6xl xl:text-7xl font-mono font-bold leading-tight mb-4">
-              <div className="mb-2">{subtitle}</div>
-              <div className="relative inline-block">
-                <span
-                  className="px-4 py-2 -rotate-[5deg] inline-block hover:-rotate-0 transition-transform duration-300 ease-in-out font-mono font-bold"
-                  style={{
-                    backgroundColor: primaryColor,
-                    color: secondaryColor,
-                    boxShadow: `6px 6px 0px ${primaryColor}`,
-                  }}
-                >
-                  {highlightedWord}
-                </span>
-              </div>
-              <div className="mt-2">{bottomText}</div>
-            </h2>
-          </div>
+          {!hasSearched && (
+            <div className="text-center mb-12 lg:mb-16">
+              <h2 className="text-3xl sm:text-4xl lg:text-6xl xl:text-7xl font-mono font-bold leading-tight mb-4">
+                <div className="mb-2">{subtitle}</div>
+                <div className="relative inline-block">
+                  <span
+                    className="px-4 py-2 -rotate-[5deg] inline-block hover:-rotate-0 transition-transform duration-300 ease-in-out font-mono font-bold"
+                    style={{
+                      backgroundColor: primaryColor,
+                      color: secondaryColor,
+                      boxShadow: `6px 6px 0px ${primaryColor}`,
+                    }}
+                  >
+                    {highlightedWord}
+                  </span>
+                </div>
+                <div className="mt-2">{bottomText}</div>
+              </h2>
+            </div>
+          )}
+
           {/* Search Section */}
-          <div className="max-w-3xl mx-auto">
+          <div className={`max-w-3xl mx-auto ${hasSearched ? "mb-8" : ""}`}>
             {/* Search Input */}
             <div className="mb-6">
               <div
@@ -376,16 +528,7 @@ export function RetroHeader({
                   boxShadow: `6px 6px 0px ${primaryColor}`,
                 }}
               >
-                <style >{`
-                  .search-hover-effect {
-                    transition: transform 0.2s, box-shadow 0.2s;
-                  }
-                  .search-hover-effect:hover {
-                    transform: translate(6px, 6px);
-                    box-shadow: none;
-                  }
-                `}</style>
-                <div className=" flex items-center w-full">
+                <div className="flex items-center w-full">
                   <Search className="w-6 h-6 mr-4" style={{ color: textColor }} />
                   <input
                     type="text"
@@ -395,21 +538,28 @@ export function RetroHeader({
                     className="flex-1 bg-transparent outline-none font-mono text-sm md:text-lg"
                     style={{ color: textColor }}
                     onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                    disabled={isLoading}
                   />
                   <button
                     onClick={handleSearch}
-                    className="ml-4 p-3 rounded-lg border-2 transition-all duration-200 hover:scale-110"
+                    disabled={isLoading}
+                    className="ml-4 p-3 rounded-lg border-2 transition-all duration-200 hover:scale-110 disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{
                       backgroundColor: primaryColor,
                       color: secondaryColor,
                       borderColor: primaryColor,
                     }}
                   >
-                    <ArrowRight className="w-5 h-5" />
+                    {isLoading ? (
+                      <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <ArrowRight className="w-5 h-5" />
+                    )}
                   </button>
                 </div>
               </div>
             </div>
+
             {/* Filter Buttons */}
             <div className="flex flex-wrap justify-center gap-3">
               {searchFilters.map((filter) => (
@@ -430,47 +580,399 @@ export function RetroHeader({
               ))}
             </div>
           </div>
+
           {/* Mobile Navigation Toggle */}
-          <div className="md:hidden mt-8 flex justify-center">
-            <div
-              className="inline-flex border-2 rounded-lg overflow-hidden"
-              style={{
-                borderColor: primaryColor,
-                boxShadow: `4px 4px 0px ${primaryColor}`,
-              }}
-            >
-              {navToggleOptions.map((option) => (
-                <button
-                  key={option}
-                  onClick={() => handleNavToggle(option)}
-                  className="px-6 py-2 font-mono font-bold transition-all duration-200 border-r-2 last:border-r-0"
-                  style={{
-                    backgroundColor: activeNavOption === option ? primaryColor : secondaryColor,
-                    color: activeNavOption === option ? secondaryColor : textColor,
-                    borderRightColor: primaryColor,
-                  }}
-                >
-                  {option}
-                </button>
-              ))}
+          {/* {!hasSearched && (
+            <div className="md:hidden mt-8 flex justify-center">
+              <div
+                className="inline-flex border-2 rounded-lg overflow-hidden"
+                style={{
+                  borderColor: primaryColor,
+                  boxShadow: `4px 4px 0px ${primaryColor}`,
+                }}
+              >
+                {navToggleOptions.map((option) => (
+                  <button
+                    key={option}
+                    onClick={() => handleNavToggle(option)}
+                    className="px-6 py-2 font-mono font-bold transition-all duration-200 border-r-2 last:border-r-0"
+                    style={{
+                      backgroundColor: activeNavOption === option ? primaryColor : secondaryColor,
+                      color: activeNavOption === option ? secondaryColor : textColor,
+                      borderRightColor: primaryColor,
+                    }}
+                  >
+                    {option}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )} */}
         </div>
       </div>
+
+      {/* Search Results */}
+      {hasSearched && (
+        <div className="relative z-20 px-6 lg:px-12 pb-12">
+          <div className="max-w-7xl mx-auto">
+            {/* Results Header */}
+            <div className="mb-8">
+              <h3 className="text-2xl font-mono font-bold mb-2" style={{ color: textColor }}>
+                Search Results for "{searchQuery}"
+              </h3>
+              <p className="font-mono text-sm opacity-70" style={{ color: textColor }}>
+                Found {searchResults.length} results
+              </p>
+            </div>
+
+            {/* Results Grid */}
+            {isLoading ? (
+              <div className="flex justify-center items-center py-20">
+                <div
+                  className="w-12 h-12 border-4 border-current border-t-transparent rounded-full animate-spin"
+                  style={{ color: primaryColor }}
+                />
+              </div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
+                  {currentResults.map((result, index) => (
+                    <RetroCard
+                      key={`${result.txid}-${index}`}
+                      primaryColor={primaryColor}
+                      secondaryColor={"#ffffff"}
+                      textColor={textColor}
+                      className="relative flex flex-col h-64"
+                    >
+                      {/* External Link Icon */}
+                      <button
+                        onClick={() => window.open(result.url, "_blank")}
+                        className="absolute top-2 right-2 p-2 rounded-lg border-2 transition-all duration-200 hover:scale-110"
+                        style={{
+                          backgroundColor: primaryColor,
+                          color: secondaryColor,
+                          borderColor: primaryColor,
+                        }}
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                      </button>
+                      
+                      
+                      
+                      <div className="flex-1 pr-12 pb-2">
+                        <h4 className="font-mono font-bold text-lg mb-2 line-clamp-2" style={{ color: textColor }}>
+                          {result.web_loader_title || result.title || "Untitled"}
+                        </h4>
+
+                        <p className="font-mono text-sm mb-3 line-clamp-3" style={{ color: textColor, opacity: 0.8 }}>
+                          {truncateText(result.web_loader_description || result.description || result.chunk, 120)}
+                        </p>
+
+                        {/* Commented out score display */}
+                        {/* <div className="mb-3">
+                          <span
+                            className="inline-block px-2 py-1 rounded text-xs font-mono font-bold"
+                            style={{
+                              backgroundColor: primaryColor,
+                              color: secondaryColor,
+                            }}
+                          >
+                            Score: {result.score.toFixed(2)}
+                          </span>
+                        </div> */}
+
+                        <p className="font-mono text-xs mb-2 truncate" style={{ color: textColor, opacity: 0.6 }}>
+                          {result.url}
+                        </p>
+                      </div>
+
+                      <button
+                        onClick={() => handleResultClick(result)}
+                        className="flex absolute bottom-4 left-4 items-center gap-2 px-3 py-2 font-mono font-bold rounded-lg border-2 transition-all duration-200 hover:scale-105 mt-auto"
+                        style={{
+                          backgroundColor: secondaryColor,
+                          color: textColor,
+                          borderColor: primaryColor,
+                          boxShadow: `2px 2px 0px ${primaryColor}`,
+                        }}
+                      >
+                        <Eye className="w-4 h-4" />
+                        Details
+                      </button>
+                    </RetroCard>
+                  ))}
+                </div>
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <div className="flex justify-center items-center gap-4">
+                    <button
+                      onClick={() => handlePageChange(currentPage - 1)}
+                      disabled={currentPage === 1}
+                      className="flex items-center gap-2 px-4 py-2 font-mono font-bold rounded-lg border-2 transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{
+                        backgroundColor: "#ffffff",
+                        color: textColor,
+                        borderColor: primaryColor,
+                        boxShadow: `3px 3px 0px ${primaryColor}`,
+                      }}
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      Previous
+                    </button>
+
+                    <div className="flex gap-2">
+                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                        const pageNum = Math.max(1, Math.min(totalPages - 4, currentPage - 2)) + i
+                        return (
+                          <button
+                            key={pageNum}
+                            onClick={() => handlePageChange(pageNum)}
+                            className="px-3 py-2 font-mono font-bold rounded-lg border-2 transition-all duration-200 hover:scale-105"
+                            style={{
+                              backgroundColor: currentPage === pageNum ? primaryColor : "#ffffff",
+                              color: currentPage === pageNum ? secondaryColor : textColor,
+                              borderColor: primaryColor,
+                              boxShadow: `2px 2px 0px ${primaryColor}`,
+                            }}
+                          >
+                            {pageNum}
+                          </button>
+                        )
+                      })}
+                    </div>
+
+                    <button
+                      onClick={() => handlePageChange(currentPage + 1)}
+                      disabled={currentPage === totalPages}
+                      className="flex items-center gap-2 px-4 py-2 font-mono font-bold rounded-lg border-2 transition-all duration-200 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
+                      style={{
+                        backgroundColor: "#ffffff",
+                        color: textColor,
+                        borderColor: primaryColor,
+                        boxShadow: `3px 3px 0px ${primaryColor}`,
+                      }}
+                    >
+                      Next
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Bottom Preview Section with slide-up animation */}
-      <div className="relative z-20 mt-12 lg:mt-0" style={videoSlideUp}>
-        <div className="mx-6 lg:mx-12 xl:mx-28 p-6 rounded-t-lg">
-          <div className="flex items-center justify-center gap-4">
-            <div className="w-full">
-              <RetroVideo title="GLIMPSE Demo" controls={true} autoPlay={false} />
+      {!hasSearched && (
+        <div className="relative z-20 mt-12 lg:mt-0" style={videoSlideUp}>
+          <div className="mx-6 lg:mx-12 xl:mx-28 p-6 rounded-t-lg">
+            <div className="flex items-center justify-center gap-4">
+              <div className="w-full">
+                <RetroVideo title="GLIMPSE Demo" controls={true} autoPlay={false} />
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
+
       {/* Footer */}
       <div className="relative z-10 text-center pb-6">
         <p className="font-mono text-sm opacity-60">@Glimpse all rights reserved</p>
       </div>
-    </header>
+
+      {/* Status Popup */}
+      <RetroPopup
+        isOpen={isStatusPopupOpen}
+        onClose={() => setIsStatusPopupOpen(false)}
+        title="System Status"
+        size="md"
+        primaryColor={primaryColor}
+        secondaryColor={secondaryColor}
+        textColor={textColor}
+      >
+        {isStatusLoading ? (
+          <div className="flex justify-center items-center py-8">
+            <div
+              className="w-8 h-8 border-4 border-current border-t-transparent rounded-full animate-spin"
+              style={{ color: primaryColor }}
+            />
+          </div>
+        ) : statusData ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div
+                className="text-center p-4 rounded-lg border-2"
+                style={{ borderColor: primaryColor, backgroundColor: "#ffffff" }}
+              >
+                <div className="text-2xl font-bold mb-1" style={{ color: textColor }}>
+                  {statusData.web.toLocaleString()}
+                </div>
+                <div className="text-sm opacity-70" style={{ color: textColor }}>
+                  Web Pages
+                </div>
+              </div>
+
+              <div
+                className="text-center p-4 rounded-lg border-2"
+                style={{ borderColor: primaryColor, backgroundColor: "#ffffff" }}
+              >
+                <div className="text-2xl font-bold mb-1" style={{ color: textColor }}>
+                  {statusData.image.toLocaleString()}
+                </div>
+                <div className="text-sm opacity-70" style={{ color: textColor }}>
+                  Images
+                </div>
+              </div>
+
+              <div
+                className="text-center p-4 rounded-lg border-2"
+                style={{ borderColor: primaryColor, backgroundColor: "#ffffff" }}
+              >
+                <div className="text-2xl font-bold mb-1" style={{ color: textColor }}>
+                  {statusData.audio.toLocaleString()}
+                </div>
+                <div className="text-sm opacity-70" style={{ color: textColor }}>
+                  Audio Files
+                </div>
+              </div>
+
+              <div
+                className="text-center p-4 rounded-lg border-2"
+                style={{ borderColor: primaryColor, backgroundColor: "#ffffff" }}
+              >
+                <div className="text-2xl font-bold mb-1" style={{ color: textColor }}>
+                  {statusData.video.toLocaleString()}
+                </div>
+                <div className="text-sm opacity-70" style={{ color: textColor }}>
+                  Video Files
+                </div>
+              </div>
+            </div>
+
+            <div
+              className="text-center p-4 rounded-lg border-2"
+              style={{ borderColor: primaryColor, backgroundColor: "#f0f9ff" }}
+            >
+              <div className="text-3xl font-bold mb-1" style={{ color: textColor }}>
+                {statusData.all.toLocaleString()}
+              </div>
+              <div className="text-sm opacity-70" style={{ color: textColor }}>
+                Total Indexed Items
+              </div>
+            </div>
+
+            <div
+              className="text-center p-4 rounded-lg border-2"
+              style={{ borderColor: primaryColor, backgroundColor: "#fef3c7" }}
+            >
+              <div className="text-2xl font-bold mb-1" style={{ color: textColor }}>
+                {statusData.arns.toLocaleString()}
+              </div>
+              <div className="text-sm opacity-70" style={{ color: textColor }}>
+                ARNS Domains
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center py-8">
+            <p style={{ color: textColor }}>Failed to load status data</p>
+          </div>
+        )}
+      </RetroPopup>
+
+      {/* Detail Popup */}
+      <RetroPopup
+        isOpen={isPopupOpen}
+        onClose={() => setIsPopupOpen(false)}
+        title="Search Result Details"
+        size="lg"
+        primaryColor={primaryColor}
+        secondaryColor={secondaryColor}
+        textColor={textColor}
+      >
+        {selectedResult && (
+          <div className="space-y-4">
+            <div>
+              <h3 className="font-bold text-lg mb-2" style={{ color: textColor }}>
+                {selectedResult.web_loader_title || selectedResult.title || "Untitled"}
+              </h3>
+              <a
+                href={selectedResult.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:underline break-all"
+              >
+                {selectedResult.url}
+              </a>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              {/* Commented out score */}
+              {/* <div>
+                <strong>Score:</strong> {selectedResult.score.toFixed(4)}
+              </div> */}
+              {/* Commented out content type */}
+              {/* <div>
+                <strong>Content Type:</strong> {selectedResult.content_type}
+              </div> */}
+              {/* Commented out word count */}
+              {/* <div>
+                <strong>Word Count:</strong> {selectedResult.word_count}
+              </div> */}
+              {/* Commented out section */}
+              {/* <div>
+                <strong>Section:</strong> {selectedResult.section}
+              </div> */}
+              <div>
+                <strong>ARNS Status:</strong> {selectedResult.arns_status}
+              </div>
+              <div>
+                <strong>Modality:</strong> {selectedResult.modality}
+              </div>
+            </div>
+
+            {selectedResult.web_loader_description && (
+              <div>
+                <strong>Description:</strong>
+                <p className="mt-1 text-sm opacity-80">{selectedResult.web_loader_description}</p>
+              </div>
+            )}
+
+            {/* Commented out content preview */}
+            {/* {selectedResult.chunk && (
+              <div>
+                <strong>Content Preview:</strong>
+                <p className="mt-1 text-sm opacity-80 max-h-32 overflow-y-auto">{selectedResult.chunk}</p>
+              </div>
+            )} */}
+
+            {selectedResult.keywords && (
+              <div>
+                <strong>Keywords:</strong>
+                <p className="mt-1 text-sm opacity-80">{selectedResult.keywords}</p>
+              </div>
+            )}
+
+            <div className="pt-4 border-t" style={{ borderTopColor: primaryColor }}>
+              <button
+                onClick={() => window.open(selectedResult.url, "_blank")}
+                className="flex items-center gap-2 px-4 py-2 font-mono font-bold rounded-lg border-2 transition-all duration-200 hover:scale-105"
+                style={{
+                  backgroundColor: primaryColor,
+                  color: secondaryColor,
+                  borderColor: primaryColor,
+                  boxShadow: `3px 3px 0px ${primaryColor}`,
+                }}
+              >
+                <ExternalLink className="w-4 h-4" />
+                Visit Website
+              </button>
+            </div>
+          </div>
+        )}
+      </RetroPopup>
+    </div>
   )
 }

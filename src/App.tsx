@@ -2,6 +2,7 @@
 import {ConnectButton, useActiveAddress} from '@arweave-wallet-kit/react';
 import { RetroHeader } from './components/ardacity/ar-retro-header';
 
+
 function App() {
   const walletaddy = useActiveAddress();
   console.log("your connected wallet is",walletaddy);
@@ -22,8 +23,11 @@ function App() {
       speechBubbleText="Wow look great! What's Glimpse"
       infoBoxText="Glimpse is the one stop solution to search anything on the hyperbeam on the go using vector search feature."
       onSearch={(query, filter) => console.log(query, filter)}
-      onNavToggle={(option) => console.log(option)}
+      // onNavToggle={(option) => console.log(option)}
     />
+    
+     
+    
     </div>
   );
 }

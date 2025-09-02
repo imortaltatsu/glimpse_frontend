@@ -39,6 +39,58 @@ export function ArAudioCard({
     }
   })()
 
+  const isLikelyUrl = (value?: string) => {
+    if (!value) return false
+    if (/^https?:\/\//i.test(value)) return true
+    try {
+      // This will throw for non-URLs lacking a scheme
+      // We only want to treat obvious URLs as URLs
+      new URL(value)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  const containsUrl = (value?: string) => {
+    if (!value) return false
+    return /(https?:\/\/\S+)/i.test(value)
+  }
+
+  const isLikelyIdentifier = (value?: string) => {
+    if (!value) return false
+    // Treat long base64url/base58-like strings as identifiers (e.g., Arweave txids)
+    return /^[A-Za-z0-9_-]{32,}$/.test(value)
+  }
+
+  const deriveTitleFromUrl = (value?: string) => {
+    if (!value) return "Audio"
+    try {
+      const u = new URL(value)
+      const path = u.pathname
+      const filename = path.split("/").filter(Boolean).pop()
+      if (filename) return decodeURIComponent(filename)
+      return u.hostname.replace(/^www\./, "")
+    } catch {
+      return "Audio"
+    }
+  }
+
+  const displayTitle = (() => {
+    // Hide if it's a URL or an identifier-like string (txid)
+    if (title && (isLikelyUrl(title) || isLikelyIdentifier(title))) return ""
+    if (title) return title
+    // If missing or unusable, derive from URL but suppress identifier-like filenames
+    const derived = deriveTitleFromUrl(title || audioUrl || linkUrl)
+    return isLikelyIdentifier(derived) ? "" : derived
+  })()
+
+  const displayDescription = (() => {
+    if (!description) return ""
+    if (containsUrl(description) || isLikelyIdentifier(description)) return ""
+    return description
+  })()
+
   const togglePlay = () => {
     const a = audioRef.current
     if (!a) return
@@ -72,16 +124,16 @@ export function ArAudioCard({
         <span className="font-mono text-sm" style={{ color: textColor }}>Audio preview</span>
       </div>
 
-      {(title || description) && (
+      {(displayTitle || displayDescription) && (
         <div className="space-y-1">
-          {title && (
+          {displayTitle && (
             <h4 className="font-mono font-bold text-sm line-clamp-1" style={{ color: textColor }}>
-              {title}
+              {displayTitle}
             </h4>
           )}
-          {description && (
+          {displayDescription && (
             <p className="font-mono text-xs opacity-80 line-clamp-2" style={{ color: textColor }}>
-              {description}
+              {displayDescription}
             </p>
           )}
         </div>

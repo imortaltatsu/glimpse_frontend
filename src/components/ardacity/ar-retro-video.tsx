@@ -1,12 +1,15 @@
 "use client"
 
 import { useState, useRef } from "react"
-import { Play, Pause, Volume2, VolumeX, Maximize } from "lucide-react"
+import { Play, Pause, Volume2, VolumeX, Maximize, MoreHorizontal, Copy, Check } from "lucide-react"
 
 interface RetroVideoProps {
   src?: string
   poster?: string
   title?: string
+  showHeader?: boolean
+  rounded?: boolean
+  shadow?: boolean
   primaryColor?: string
   secondaryColor?: string
   textColor?: string
@@ -19,6 +22,9 @@ export function RetroVideo({
   src = "/glimpsevid.mp4",
   poster = "/videothumb.png",
   title = "Retro Video Player",
+  showHeader = false,
+  rounded = true,
+  shadow = true,
   primaryColor = "#2d2d2d",
   secondaryColor = "#f5f5dc",
   textColor = "#2d2d2d",
@@ -30,6 +36,8 @@ export function RetroVideo({
   const [isMuted, setIsMuted] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
+  const [showMenu, setShowMenu] = useState(false)
+  const [copied, setCopied] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
 
   const togglePlay = () => {
@@ -70,6 +78,15 @@ export function RetroVideo({
     }
   }
 
+  const enterFullscreen = () => {
+    const el = videoRef.current
+    if (!el) return
+    const anyEl = el as any
+    if (el.requestFullscreen) el.requestFullscreen()
+    else if (anyEl.webkitRequestFullscreen) anyEl.webkitRequestFullscreen()
+    else if (anyEl.msRequestFullscreen) anyEl.msRequestFullscreen()
+  }
+
   const formatTime = (time: number) => {
     const minutes = Math.floor(time / 60)
     const seconds = Math.floor(time % 60)
@@ -78,29 +95,61 @@ export function RetroVideo({
 
   return (
     <div
-      className={`rounded-lg border-2 overflow-hidden ${className}`}
+      className={`${rounded ? 'rounded-lg' : ''} border-2 overflow-hidden ${className}`}
       style={{
         backgroundColor: primaryColor,
         borderColor: primaryColor,
-        boxShadow: `6px 6px 0px ${primaryColor}`,
+        boxShadow: shadow ? `6px 6px 0px ${primaryColor}` : undefined,
       }}
     >
       {/* Video Header */}
-      <div
-        className="px-4 py-2 border-b-2 flex items-center justify-between"
-        style={{
-          backgroundColor: secondaryColor,
-          borderBottomColor: primaryColor,
-          color: textColor,
-        }}
-      >
-        <span className="font-mono font-bold text-sm">{title}</span>
-        <div className="flex gap-1">
-          <div className="w-3 h-3 rounded-full bg-red-500"></div>
-          <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-          <div className="w-3 h-3 rounded-full bg-green-500"></div>
+      {showHeader && (
+        <div
+          className="px-4 py-2 border-b-2 flex items-center justify-between"
+          style={{
+            backgroundColor: secondaryColor,
+            borderBottomColor: primaryColor,
+            color: textColor,
+          }}
+        >
+          <span className="font-mono font-bold text-sm">{title}</span>
+          <div className="relative">
+            <button
+              onClick={() => setShowMenu(v => !v)}
+              className="p-1 rounded border-2"
+              style={{ borderColor: primaryColor, color: textColor, backgroundColor: secondaryColor }}
+              aria-label="More options"
+            >
+              <MoreHorizontal className="w-4 h-4" />
+            </button>
+            {showMenu && (
+              <div
+                className="absolute right-0 mt-2 w-36 rounded-lg border-2 shadow-md overflow-hidden z-10"
+                style={{ backgroundColor: "#ffffff", borderColor: primaryColor }}
+              >
+                <button
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(src || "")
+                      setCopied(true)
+                      setTimeout(() => setCopied(false), 1200)
+                    } catch (e) {
+                      console.error("Failed to copy link", e)
+                    } finally {
+                      setShowMenu(false)
+                    }
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm"
+                  style={{ color: textColor }}
+                >
+                  {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  Copy link
+                </button>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Video Container */}
       <div className="relative aspect-video bg-black">
@@ -109,6 +158,7 @@ export function RetroVideo({
           src={src}
           poster={poster}
           className="w-full h-full object-cover"
+          crossOrigin="anonymous"
           onTimeUpdate={handleTimeUpdate}
           onLoadedMetadata={handleLoadedMetadata}
           onPlay={() => setIsPlaying(true)}
@@ -165,7 +215,7 @@ export function RetroVideo({
                 }}
               />
             </div>
-            <button style={{ color: secondaryColor }}>
+            <button onClick={enterFullscreen} style={{ color: secondaryColor }}>
               <Maximize className="w-5 h-5" />
             </button>
           </div>

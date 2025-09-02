@@ -15,8 +15,11 @@ import {
   ChevronRight,
   
 } from "lucide-react"
-import { RetroVideo } from "./ar-retro-video"
+import { ArHomeVideoCard } from "./ar-home-video-card"
 import { RetroCard } from "./ar-retro-card"
+import { ArResultVideoCard } from "./ar-result-video-card"
+import { ArImageCard } from "./ar-image-card"
+import { ArAudioCard } from "./ar-audio-card"
 import { RetroPopup } from "./ar-retro-popup"
 
 interface SearchResult {
@@ -52,6 +55,10 @@ interface SearchResult {
   keywords: string
   duplicates: any[]
   has_duplicates: boolean
+  // Optional NSFW flags if provided by backend
+  is_nsfw?: boolean
+  nsfw_score?: number
+  nsfw_confidence?: number
 }
 
 interface SearchResponse {
@@ -106,11 +113,11 @@ export function RetroHeader({
   // navToggleOptions = ["WEB", "ARNS"],
   statusText = "STATUS",
   searchPlaceholder = "Search anything ///",
-  searchFilters = ["Text", "Image", "Video", "Audio"],
+  searchFilters = ["Web", "Image", "Video", "Audio"],
   speechBubbleText = "Wow look great! What's Glimpse",
   infoBoxText = "Glimpse is the one stop solution to search anything on the hyperbeam on the go using vector search feature.",
   showCharacters = true,
-  character1Image = "https://pbs.twimg.com/profile_images/1940352680846635008/gMK5JINJ_400x400.jpg",
+  character1Image = "https://abcdefghijklmnopqrstuvwxyz.arweave.net/",
   character2Image = "https://zh5mns2xs4orzalnne62iz47xz7ag54ujodwlfmdbrzk5xymqkeq.arweave.net/yfrGy1eXHRyBbWk9pGefvn4Dd5RLh2WVgwxyrt8Mgok",
   primaryColor = "#2d2d2d",
   secondaryColor = "#f5f5dc",
@@ -127,6 +134,15 @@ export function RetroHeader({
   const [showFirstBubble, setShowFirstBubble] = useState(false)
   const [showSecondBubble, setShowSecondBubble] = useState(false)
   const [videoVisible, setVideoVisible] = useState(false)
+  // Allow runtime override of character 1 (e.g., mascot easter egg)
+  const [character1Src, setCharacter1Src] = useState<string>(character1Image)
+  const MASCOT_ALT = "green elephant humanoid"
+
+  const preprocessQuery = (q: string): string => {
+    // Replace any variation of "dum dum" / "dumdum" (with spaces/dashes/underscores/dots) with mascot alt text
+    const pattern = /d\s*u\s*m[\s._-]*d\s*u\s*m/gi
+    return q.replace(pattern, MASCOT_ALT)
+  }
 
   // Search states
   const [searchResults, setSearchResults] = useState<SearchResult[]>([])
@@ -134,14 +150,16 @@ export function RetroHeader({
   const [hasSearched, setHasSearched] = useState(false)
   const [selectedResult, setSelectedResult] = useState<SearchResult | null>(null)
   const [isPopupOpen, setIsPopupOpen] = useState(false)
+  const [hideNsfw, setHideNsfw] = useState(true)
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1)
   const resultsPerPage = 10
-  const totalPages = Math.ceil(searchResults.length / resultsPerPage)
+  const visibleResults = hideNsfw ? searchResults.filter(r => !r.is_nsfw) : searchResults
+  const totalPages = Math.ceil(visibleResults.length / resultsPerPage)
   const startIndex = (currentPage - 1) * resultsPerPage
   const endIndex = startIndex + resultsPerPage
-  const currentResults = searchResults.slice(startIndex, endIndex)
+  const currentResults = visibleResults.slice(startIndex, endIndex)
 
   // Status states
   const [statusData, setStatusData] = useState<StatusResponse | null>(null)
@@ -174,29 +192,45 @@ export function RetroHeader({
   const handleSearch = async () => {
     if (!searchQuery.trim()) return
 
+    // Parse and replace mascot keyword, and trigger mascot if present
+    const normalized = searchQuery.toLowerCase().replace(/\s+/g, "")
+    const containsMascot = normalized.includes("dumdum")
+    const parsedQuery = preprocessQuery(searchQuery)
+    if (containsMascot) {
+      setCharacter1Src("https://abcdefghijklmnopqrstuvwxyz.arweave.net/")
+    }
+
     setIsLoading(true)
     setHasSearched(true)
     setCurrentPage(1)
 
     try {
       // Determine endpoint based on active filter
-      let endpoint = "searchweb" // default for Text
+      let endpoint = "searchweb" // default for Web
       if (activeFilter === "Image") endpoint = "searchimage"
       else if (activeFilter === "Video") endpoint = "searchvideo"
       else if (activeFilter === "Audio") endpoint = "searchaudio"
 
       const response = await fetch(
-        `https://arfetch.adityaberry.me/${endpoint}?query=${encodeURIComponent(searchQuery)}&top_k=100`,
+        `https://arfetch.adityaberry.me/${endpoint}?query=${encodeURIComponent(parsedQuery)}&top_k=100`,
       )
       const data: SearchResponse = await response.json()
       setSearchResults(data.results || [])
-      onSearch?.(searchQuery, activeFilter)
+      onSearch?.(parsedQuery, activeFilter)
     } catch (error) {
       console.error("Search failed:", error)
       setSearchResults([])
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const triggerMascotImageSearch = () => {
+    setSearchQuery("dum dum")
+    setActiveFilter("Image")
+    setTimeout(() => {
+      handleSearch()
+    }, 0)
   }
 
   const handleStatusClick = async () => {
@@ -236,7 +270,7 @@ export function RetroHeader({
   }
 
   const filterIcons = {
-    Text: <FileText className="w-4 h-4" />,
+    Web: <FileText className="w-4 h-4" />,
     Image: <ImageIcon className="w-4 h-4" />,
     Video: <Video className="w-4 h-4" />,
     Audio: <Volume2 className="w-4 h-4" />,
@@ -391,7 +425,7 @@ export function RetroHeader({
 
       {/* Decorative Elements */}
       {!hasSearched && (
-        <div className="absolute inset-0 z-5 pointer-events-none">
+        <div className="absolute inset-0 z-5 pointer-events-auto">
           {/* Speech bubble - Top left */}
           <div className="absolute top-32 left-[5%] hidden xl:block">
             {/* First chat bubble with slide-in animation */}
@@ -437,17 +471,25 @@ export function RetroHeader({
           {/* Character Illustrations - Top right with floating animation */}
           {showCharacters && (
             <>
-              <div className="absolute xl:top-[10%] right-[5%] hidden xl:block">
-                <img
-                  className="w-60 rounded-lg border-2 flex items-center justify-center"
-                  style={{
-                    borderColor: primaryColor,
-                    boxShadow: `4px 4px 0px ${primaryColor}`,
-                    ...floatingAnimation1,
-                  }}
-                  src={character1Image || "/placeholder.svg"}
-                  alt="Character illustration"
-                />
+              <div className="absolute xl:top-[10%] right-[5%] hidden xl:block z-40">
+                <div className="relative inline-block" style={{ ...floatingAnimation1 }}>
+                  <img
+                    onClick={triggerMascotImageSearch}
+                    className="w-60 rounded-lg border-2 flex items-center justify-center cursor-pointer"
+                    style={{
+                      borderColor: primaryColor,
+                      boxShadow: `4px 4px 0px ${primaryColor}`,
+                    }}
+                    src={character1Src || "/placeholder.svg"}
+                    alt="green elephant humanoid"
+                  />
+                  <button
+                    onClick={triggerMascotImageSearch}
+                    className="absolute inset-0 w-full h-full z-50"
+                    style={{ background: 'transparent', pointerEvents: 'auto' }}
+                    aria-label="Trigger mascot image search"
+                  />
+                </div>
                 {/* Audio waveform visualization with floating animation */}
                 <div
                   className="mt-4 p-3 rounded-lg border-2 bg-green-400"
@@ -475,17 +517,25 @@ export function RetroHeader({
                 </div>
               </div>
               {/* Bottom left character with floating animation */}
-              <div className="absolute top-[32%] left-[10%] hidden lg:block">
-                <img
-                  className="w-60 rounded-lg border-2 flex items-center justify-center"
-                  style={{
-                    borderColor: primaryColor,
-                    boxShadow: `4px 4px 0px ${primaryColor}`,
-                    ...floatingAnimation2,
-                  }}
-                  src={character2Image || "/placeholder.svg"}
-                  alt="Bottom character illustration"
-                />
+              <div className="absolute top-[32%] left-[10%] hidden lg:block z-40">
+                <div className="relative inline-block" style={{ ...floatingAnimation2 }}>
+                  <img
+                    onClick={triggerMascotImageSearch}
+                    className="w-60 rounded-lg border-2 flex items-center justify-center cursor-pointer"
+                    style={{
+                      borderColor: primaryColor,
+                      boxShadow: `4px 4px 0px ${primaryColor}`,
+                    }}
+                    src={character2Image || "/placeholder.svg"}
+                    alt="Bottom character illustration"
+                  />
+                  <button
+                    onClick={triggerMascotImageSearch}
+                    className="absolute inset-0 w-full h-full z-50"
+                    style={{ background: 'transparent', pointerEvents: 'auto' }}
+                    aria-label="Trigger mascot image search"
+                  />
+                </div>
               </div>
             </>
           )}
@@ -578,6 +628,19 @@ export function RetroHeader({
                   {filter}
                 </button>
               ))}
+              {/* Hide NSFW toggle */}
+              <button
+                onClick={() => setHideNsfw(v => !v)}
+                className="flex items-center gap-2 px-4 py-2 font-mono font-bold rounded-lg border-2 transition-all duration-200 hover:scale-105"
+                style={{
+                  backgroundColor: hideNsfw ? primaryColor : "#ffffff",
+                  color: hideNsfw ? secondaryColor : textColor,
+                  borderColor: primaryColor,
+                  boxShadow: `3px 3px 0px ${primaryColor}`,
+                }}
+              >
+                Hide NSFW
+              </button>
             </div>
           </div>
 
@@ -621,7 +684,7 @@ export function RetroHeader({
                 Search Results for "{searchQuery}"
               </h3>
               <p className="font-mono text-sm opacity-70" style={{ color: textColor }}>
-                Found {searchResults.length} results
+                Found {visibleResults.length} results
               </p>
             </div>
 
@@ -636,71 +699,97 @@ export function RetroHeader({
             ) : (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
-                  {currentResults.map((result, index) => (
-                    <RetroCard
-                      key={`${result.txid}-${index}`}
-                      primaryColor={primaryColor}
-                      secondaryColor={"#ffffff"}
-                      textColor={textColor}
-                      className="relative flex flex-col h-64"
-                    >
-                      {/* External Link Icon */}
-                      <button
-                        onClick={() => window.open(result.url, "_blank")}
-                        className="absolute top-2 right-2 p-2 rounded-lg border-2 transition-all duration-200 hover:scale-110"
-                        style={{
-                          backgroundColor: primaryColor,
-                          color: secondaryColor,
-                          borderColor: primaryColor,
-                        }}
+                  {currentResults.map((result, index) => {
+                    const key = `${result.txid}-${index}`
+                    const title = result.web_loader_title || result.title || "Untitled"
+                    const description = result.web_loader_description || result.description || result.chunk
+                    const linkUrl = result.url
+                    const isNsfw = Boolean(result.is_nsfw)
+                    const modality = (result.modality || result.original_modality || "text").toLowerCase()
+
+                    if (modality === "image") {
+                      return (
+                        <ArImageCard
+                          key={key}
+                          title={title}
+                          description={truncateText(description || "", 120)}
+                          imageUrl={result.url}
+                          linkUrl={linkUrl}
+                          isNsfw={isNsfw}
+                          primaryColor={primaryColor}
+                          secondaryColor="#ffffff"
+                          textColor={textColor}
+                          className="h-full"
+                        />
+                      )
+                    }
+                    if (modality === "video") {
+                      return (
+                        <ArResultVideoCard
+                          key={key}
+                          videoUrl={result.url}
+                          posterUrl={undefined}
+                          linkUrl={linkUrl}
+                          isNsfw={isNsfw}
+                          primaryColor={primaryColor}
+                          secondaryColor="#ffffff"
+                          textColor={textColor}
+                          className="h-full"
+                        />
+                      )
+                    }
+                    if (modality === "audio") {
+                      return (
+                        <ArAudioCard
+                          key={key}
+                          title={title}
+                          description={truncateText(description || "", 120)}
+                          audioUrl={result.url}
+                          linkUrl={linkUrl}
+                          isNsfw={isNsfw}
+                          primaryColor={primaryColor}
+                          secondaryColor="#ffffff"
+                          textColor={textColor}
+                          className="h-full"
+                        />
+                      )
+                    }
+
+                    // Fallback text card
+                    return (
+                      <RetroCard
+                        key={key}
+                        primaryColor={primaryColor}
+                        secondaryColor={"#ffffff"}
+                        textColor={textColor}
+                        className="relative flex flex-col h-64"
                       >
-                        <ExternalLink className="w-4 h-4" />
-                      </button>
-                      
-                      
-                      
-                      <div className="flex-1 pr-12 pb-2">
-                        <h4 className="font-mono font-bold text-lg mb-2 line-clamp-2" style={{ color: textColor }}>
-                          {result.web_loader_title || result.title || "Untitled"}
-                        </h4>
-
-                        <p className="font-mono text-sm mb-3 line-clamp-3" style={{ color: textColor, opacity: 0.8 }}>
-                          {truncateText(result.web_loader_description || result.description || result.chunk, 120)}
-                        </p>
-
-                        {/* Commented out score display */}
-                        {/* <div className="mb-3">
-                          <span
-                            className="inline-block px-2 py-1 rounded text-xs font-mono font-bold"
-                            style={{
-                              backgroundColor: primaryColor,
-                              color: secondaryColor,
-                            }}
-                          >
-                            Score: {result.score.toFixed(2)}
-                          </span>
-                        </div> */}
-
-                        <p className="font-mono text-xs mb-2 truncate" style={{ color: textColor, opacity: 0.6 }}>
-                          {result.url}
-                        </p>
-                      </div>
-
-                      <button
-                        onClick={() => handleResultClick(result)}
-                        className="flex absolute bottom-4 left-4 items-center gap-2 px-3 py-2 font-mono font-bold rounded-lg border-2 transition-all duration-200 hover:scale-105 mt-auto"
-                        style={{
-                          backgroundColor: secondaryColor,
-                          color: textColor,
-                          borderColor: primaryColor,
-                          boxShadow: `2px 2px 0px ${primaryColor}`,
-                        }}
-                      >
-                        <Eye className="w-4 h-4" />
-                        Details
-                      </button>
-                    </RetroCard>
-                  ))}
+                        <button
+                          onClick={() => window.open(result.url, "_blank")}
+                          className="absolute top-2 right-2 p-2 rounded-lg border-2 transition-all duration-200 hover:scale-110"
+                          style={{ backgroundColor: primaryColor, color: secondaryColor, borderColor: primaryColor }}
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </button>
+                        <div className="flex-1 pr-12 pb-2">
+                          <h4 className="font-mono font-bold text-lg mb-2 line-clamp-2" style={{ color: textColor }}>
+                            {title}
+                          </h4>
+                          <p className="font-mono text-sm mb-3 line-clamp-3" style={{ color: textColor, opacity: 0.8 }}>
+                            {truncateText(description || "", 120)}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleResultClick(result)}
+                          className="flex absolute bottom-4 left-4 items-center gap-2 px-3 py-2 font-mono font-bold rounded-lg border-2 transition-all duration-200 hover:scale-105 mt-auto"
+                          style={{ backgroundColor: secondaryColor, color: textColor, borderColor: primaryColor, boxShadow: `2px 2px 0px ${primaryColor}` }}
+                        >
+                          <Eye className="w-4 h-4" />
+                          Details
+                        </button>
+                      </RetroCard>
+                    )
+                  })}
                 </div>
 
                 {/* Pagination */}
@@ -770,7 +859,7 @@ export function RetroHeader({
           <div className="mx-6 lg:mx-12 xl:mx-28 p-6 rounded-t-lg">
             <div className="flex items-center justify-center gap-4">
               <div className="w-full">
-                <RetroVideo title="GLIMPSE Demo" controls={true} autoPlay={false} />
+                <ArHomeVideoCard title="GLIMPSE Demo" controls={true} autoPlay={false} />
               </div>
             </div>
           </div>
@@ -863,17 +952,7 @@ export function RetroHeader({
               </div>
             </div>
 
-            <div
-              className="text-center p-4 rounded-lg border-2"
-              style={{ borderColor: primaryColor, backgroundColor: "#fef3c7" }}
-            >
-              <div className="text-2xl font-bold mb-1" style={{ color: textColor }}>
-                {statusData.arns.toLocaleString()}
-              </div>
-              <div className="text-sm opacity-70" style={{ color: textColor }}>
-                ARNS Domains
-              </div>
-            </div>
+            
           </div>
         ) : (
           <div className="text-center py-8">
